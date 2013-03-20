@@ -1,0 +1,22 @@
+Project title:
+
+	CAN Driver Development for LPC1769 using the FreeRTOS+IO framework
+
+Project Synopsis:
+
+	FreeRTOS+IO provides a Linux/POSIX like open(), read(), write(), ioctl() type interface to peripheral driver libraries. It currently provides support
+for UART,SPI and I2C peripherals on the LPCXpresso Baseboard. Support for CAN peripheral was added by implementing a driver and FreeRTOS modifying the board support package to access the CAN peripheral through FreeRTOS+IO.
+
+
+Hardware Used:
+
+	Embedded Artist Xpresso Base Board , LPC 1769 (cortex m3) stamp.
+
+Software Used:
+
+	LPC Xpresso IDE.
+
+Project Status:
+
+	Completed.
+
