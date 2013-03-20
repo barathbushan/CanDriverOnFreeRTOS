@@ -1,0 +1,354 @@
+/*
+ * FreeRTOS+IO V1.0.1 (C) 2012 Real Time Engineers ltd.
+ *
+ * FreeRTOS+IO is an add-on component to FreeRTOS.  It is not, in itself, part
+ * of the FreeRTOS kernel.  FreeRTOS+IO is licensed separately from FreeRTOS,
+ * and uses a different license to FreeRTOS.  FreeRTOS+IO uses a dual license
+ * model, information on which is provided below:
+ *
+ * - Open source licensing -
+ * FreeRTOS+IO is a free download and may be used, modified and distributed
+ * without charge provided the user adheres to version two of the GNU General
+ * Public license (GPL) and does not remove the copyright notice or this text.
+ * The GPL V2 text is available on the gnu.org web site, and on the following
+ * URL: http://www.FreeRTOS.org/gpl-2.0.txt
+ *
+ * - Commercial licensing -
+ * Businesses and individuals who wish to incorporate FreeRTOS+IO into
+ * proprietary software for redistribution in any form must first obtain a low
+ * cost commercial license - and in-so-doing support the maintenance, support
+ * and further development of the FreeRTOS+IO product.  Commercial licenses can
+ * be obtained from http://shop.freertos.org and do not require any source files
+ * to be changed.
+ *
+ * FreeRTOS+IO is distributed in the hope that it will be useful.  You cannot
+ * use FreeRTOS+IO unless you agree that you use the software 'as is'.
+ * FreeRTOS+IO is provided WITHOUT ANY WARRANTY; without even the implied
+ * warranties of NON-INFRINGEMENT, MERCHANTABILITY or FITNESS FOR A PARTICULAR
+ * PURPOSE. Real Time Engineers Ltd. disclaims all conditions and terms, be they
+ * implied, expressed, or statutory.
+ *
+ * 1 tab == 4 spaces!
+ *
+ * http://www.FreeRTOS.org
+ * http://www.FreeRTOS.org/FreeRTOS-Plus
+ *
+ */
+
+/* FreeRTOS includes. */
+#include "FreeRTOS.h"
+#include "task.h"
+#include "semphr.h"
+
+/* IO library includes. */
+#include "FreeRTOS_IO.h"
+#include "IOUtils_Common.h"
+#include "FreeRTOS_can.h"
+#include "uart.h"
+
+/* Hardware setup peripheral driver includes.  The includes for the CAN itself
+is already included from FreeRTOS_IO_BSP.h. */
+#include "lpc17xx_pinsel.h"
+
+//Check out what all needs to be added in terms of the setup for the CAN Protocol, if anything at all
+
+
+
+
+/* Stores the IRQ numbers of the supported CAN ports. */
+static const IRQn_Type xIRQ[] = { CAN_IRQn, CANActivity_IRQn };
+
+/*Structures used to store Rx and Tx CAN Frames*/
+
+static CAN_MSG_Type CAN_TxMsg,CAN_RxMsg;
+static uint8_t status = 0;
+static uint8_t enable_irq = 0;
+void CAN_IRQHandler(void);
+
+/*-----------------------------------------------------------*/
+
+portBASE_TYPE FreeRTOS_CAN_open( Peripheral_Control_t * const pxPeripheralControl )
+{
+PINSEL_CFG_Type xPinConfig;
+LPC_CAN_TypeDef * const pxCAN = ( LPC_CAN_TypeDef * const ) diGET_PERIPHERAL_BASE_ADDRESS( pxPeripheralControl );
+portBASE_TYPE xReturn;
+const uint8_t cPeripheralNumber = diGET_PERIPHERAL_NUMBER( pxPeripheralControl );
+
+	/* Sanity check the peripheral number. */
+	if( cPeripheralNumber <= boardNUM_CANS )
+	{
+		pxPeripheralControl->read = FreeRTOS_CAN_read;
+		pxPeripheralControl->write = FreeRTOS_CAN_write;
+		pxPeripheralControl->ioctl = FreeRTOS_CAN_ioctl;
+
+
+		/* Setup the pins for the CAN being used. */
+		taskENTER_CRITICAL();
+		{
+			boardCONFIGURE_CAN_PINS( cPeripheralNumber, xPinConfig );
+			/* Set up the default CAN configuration. */
+			CAN_Init( pxCAN,boardDEFAULT_CAN_BAUD );//Setting CAN to 125000bps
+			CAN_ModeConfig(pxCAN, CAN_SELFTEST_MODE, ENABLE);//Self-test mode selected
+			CAN_SetAFMode (LPC_CANAF, CAN_AccBP);//Acceptance filter bypassed
+
+		}
+		taskEXIT_CRITICAL();
+		xReturn = pdPASS;
+	}
+	else
+	{
+		xReturn = pdFAIL;
+	}
+
+	return xReturn;
+}
+/*-----------------------------------------------------------*/
+
+size_t FreeRTOS_CAN_write( Peripheral_Descriptor_t const pxPeripheral, const void *pvBuffer, const size_t xBytes )
+{
+Peripheral_Control_t * const pxPeripheralControl = ( Peripheral_Control_t * const ) pxPeripheral;
+LPC_CAN_TypeDef * const pxCAN = ( LPC_CAN_TypeDef * const ) diGET_PERIPHERAL_BASE_ADDRESS( ( ( Peripheral_Control_t * const ) pxPeripheral ) );
+size_t xReturn = 0U;
+Status SendMsgReturn;
+uint8_t CANData[8] = {0}; //Temporary buffer for CAN data
+uint8_t *buffPtr =(uint8_t *)pvBuffer;
+uint8_t counter;
+
+size_t index;
+uint8_t self_rec=1; //Make this zero if communicating between two boards
+
+for(index=0;index<xBytes;index++)
+{
+CANData[index]=*buffPtr;
+buffPtr++;
+}
+
+CAN_TxMsg.len=(uint8_t)xBytes;
+
+		#if ioconfigUSE_CAN_POLLED_TX == 1
+		{
+			if(xBytes<=4)
+			{
+				for(counter=0;counter<xBytes;counter++)
+				{
+					CAN_TxMsg.dataA[counter]=CANData[counter];
+				}
+			}
+			else
+			{
+				for(counter=0;counter<4;counter++)
+					{
+						CAN_TxMsg.dataA[counter]=CANData[counter];
+					}
+
+
+				for(counter=0;counter<(xBytes-4);counter++)
+				{
+					CAN_TxMsg.dataB[counter]=CANData[counter+4];
+				}
+			}
+
+			SendMsgReturn =	CAN_SendMsg (pxCAN,&CAN_TxMsg,self_rec);
+			if(SendMsgReturn)
+			{
+			xReturn=xBytes;
+			}
+
+
+		}
+		#endif /* ioconfigUSE_CAN_POLLED_TX */
+
+	return xReturn;
+}
+
+/*-----------------------------------------------------------*/
+
+size_t FreeRTOS_CAN_read( Peripheral_Descriptor_t const pxPeripheral, void * const pvBuffer, const size_t xBytes )
+{
+Peripheral_Control_t * const pxPeripheralControl = ( Peripheral_Control_t * const ) pxPeripheral;
+LPC_CAN_TypeDef * const pxCAN = ( LPC_CAN_TypeDef * const ) diGET_PERIPHERAL_BASE_ADDRESS( ( ( Peripheral_Control_t * const ) pxPeripheral ) );
+size_t xReturn = 0U;
+uint64_t data=0;
+uint64_t *dataPtr=NULL;
+uint8_t displace1,displace2;
+uint8_t counter=0;
+uint8_t length;
+Status RcvMsgReturn;
+
+
+if(enable_irq == 0)
+{
+		#if ioconfigUSE_CAN_POLLED_RX == 1
+		{
+			RcvMsgReturn = CAN_ReceiveMsg (pxCAN,&CAN_RxMsg);
+			length = CAN_RxMsg.len;
+			if(length<=4)
+			{
+				displace1 = length*7;
+				for(counter=0;counter<length;counter++)
+				{
+					data |=(((uint64_t)CAN_RxMsg.dataA[counter])<<displace1);
+					displace1 -=8;
+				}
+			}
+			else
+			{
+				displace1 = length*7;
+				displace2 = length*3;
+				for(counter=0;counter<4;counter++)
+				{
+					data |=(((uint64_t)CAN_RxMsg.dataA[counter])<<displace1);
+					displace1 -=8;
+				}
+
+				for(counter=0;counter<(length-4);counter++)
+				{
+					data |=(((uint64_t)CAN_RxMsg.dataB[counter])<<displace2);
+					displace2 -=8;
+				}
+			}
+			dataPtr=(uint64_t *)pvBuffer;
+			*dataPtr=data;
+			xReturn = CAN_RxMsg.len;
+		}
+		#endif /* ioconfigUSE_CAN_POLLED_RX */
+}
+else
+{
+		if(status == 1)
+		{
+			for(counter=0;counter<4;counter++)
+						{
+						data |=(((uint64_t)CAN_RxMsg.dataA[counter])<<displace1);
+						displace1 -=8;
+						}
+
+						for(counter=0;counter<4;counter++)
+						{
+						data |=(((uint64_t)CAN_RxMsg.dataB[counter])<<displace2);
+						displace2 -=8;
+						}
+						dataPtr=(uint64_t *)pvBuffer;
+						*dataPtr=data;
+				xReturn = CAN_RxMsg.len;
+		}
+		else
+			xReturn = 0;
+}
+
+			return xReturn;
+}
+/*-----------------------------------------------------------*/
+
+
+portBASE_TYPE FreeRTOS_CAN_ioctl( Peripheral_Descriptor_t pxPeripheral, uint32_t ulRequest, void *pvValue )
+{
+Peripheral_Control_t * const pxPeripheralControl = ( Peripheral_Control_t * const ) pxPeripheral;
+const int8_t cPeripheralNumber = diGET_PERIPHERAL_NUMBER( ( ( Peripheral_Control_t * const ) pxPeripheral ) );
+LPC_CAN_TypeDef * pxCAN = ( LPC_CAN_TypeDef * ) diGET_PERIPHERAL_BASE_ADDRESS( ( ( Peripheral_Control_t * const ) pxPeripheral ) );
+CAN_PinCFG_Type xCANConfig;
+FunctionalState NewState;
+uint32_t ulValue = ( uint32_t ) pvValue;
+
+portBASE_TYPE xReturn = pdPASS;
+
+	taskENTER_CRITICAL();
+	{
+		switch( ulRequest )
+		{
+
+			case ioctlUSE_INTERRUPTS :
+					/*specific to CAN code stuff needs to be changed, look into this please.*/
+				if( ulValue == pdFALSE )
+				{
+					NVIC_DisableIRQ(CAN_IRQn);
+				}
+				else
+				{
+					/* Enable the Rx  interrupt. */
+					CAN_IRQCmd (pxCAN,CANINT_RIE, ENABLE);
+
+					/* Enable the interrupt and set its priority to the minimum
+					interrupt priority.  A separate command can be issued to raise
+					the priority if desired. */
+					NVIC_EnableIRQ(CAN_IRQn);
+					enable_irq = 1;
+
+				}
+				break;
+
+
+
+			case ioctlSET_SPEED :
+				can_SetBaudrate (pxCAN,ulValue);
+				break;
+
+
+			case ioctlSET_INTERRUPT_PRIORITY :
+
+				/* The ISR uses ISR safe FreeRTOS API functions, so the priority
+				being set must be lower than (ie numerically larger than)
+				configMAX_LIBRARY_INTERRUPT_PRIORITY. */
+				configASSERT( ulValue >= configMAX_LIBRARY_INTERRUPT_PRIORITY );
+				NVIC_SetPriority( xIRQ[ cPeripheralNumber ], ulValue );
+				break;
+
+
+			case ioctlSET_CAN_STD_ID :
+				CAN_TxMsg.id = ulValue;
+				CAN_TxMsg.format = STD_ID_FORMAT;
+				break;
+
+			case ioctlSET_CAN_EXT_ID :
+
+				CAN_TxMsg.id = ulValue;
+				CAN_TxMsg.format = EXT_ID_FORMAT;
+				break;
+
+			case ioctlSET_CAN_FRAME_TYPE :
+				if(ulValue==0)
+				{
+					CAN_TxMsg.type =DATA_FRAME;
+				}
+				else
+				CAN_TxMsg.type =REMOTE_FRAME;
+				break;
+
+			case ioctlSET_CAN_CONFIG_SELFTEST_MODE :
+				if(ulValue == 0)
+				CAN_ModeConfig(pxCAN,CAN_SELFTEST_MODE,DISABLE);
+				else
+				CAN_ModeConfig(pxCAN,CAN_SELFTEST_MODE,ENABLE);
+				break;
+
+			case ioctlSET_CANAF_MODE_BYPASS :
+				if(ulValue == 1)
+				CAN_SetAFMode (LPC_CANAF,CAN_AccBP);
+				else
+				CAN_SetAFMode (LPC_CANAF,CAN_Normal);
+				break;
+
+			default :
+				xReturn = pdFAIL;
+				break;
+		}
+	}
+	taskEXIT_CRITICAL();
+
+	return xReturn;
+}
+
+void CAN_IRQHandler(void)
+{
+	uint8_t CANIntStatus;
+	CANIntStatus = CAN_IntGetStatus(LPC_CAN2);
+	if(CANIntStatus &0x01)
+	 {
+		CAN_ReceiveMsg(LPC_CAN2,&CAN_RxMsg);
+		status = 1;
+	 }
+}
+
+/*-----------------------------------------------------------*/
+
+

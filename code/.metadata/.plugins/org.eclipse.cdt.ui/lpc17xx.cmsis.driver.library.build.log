@@ -1,0 +1,6 @@
+13:30:44 **** Incremental Build of configuration Debug for project lpc17xx.cmsis.driver.library ****
+make all 
+make: Nothing to be done for `all'.
+
+13:30:45 Build Finished (took 265ms)
+

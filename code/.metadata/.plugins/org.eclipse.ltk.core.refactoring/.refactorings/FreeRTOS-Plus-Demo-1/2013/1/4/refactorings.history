@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Rename resource &apos;FreeRTOS-Plus-Demo-1/Source/Examples/Include/newuart.h&apos; to &apos;uart.h&apos;" description="Rename resource &apos;newuart.h&apos;" flags="7" id="org.eclipse.ltk.core.refactoring.rename.resource" input="Source/Examples/Include/newuart.h" name="uart.h" stamp="1358770408993" updateReferences="true"/>
+</session>

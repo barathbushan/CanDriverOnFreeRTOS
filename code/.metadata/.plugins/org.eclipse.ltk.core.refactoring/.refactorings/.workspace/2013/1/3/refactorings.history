@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<session version="1.0">
+<refactoring comment="Delete resource &apos;FreeRTOS-Plus-Demo-1/Source/FreeRTOS-Products/FreeRTOS-Plus-IO/Device/LPC17xx/SupportedBoards/LPCXpresso17xx-base-board.h&apos;" deleteContents="false" description="Delete resource &apos;FreeRTOS-Plus-Demo-1/Source/FreeRTOS-Products/FreeRTOS-Plus-IO/Device/LPC17xx/SupportedBoards/LPCXpresso17xx-base-board.h&apos;" element1="/FreeRTOS-Plus-Demo-1/Source/FreeRTOS-Products/FreeRTOS-Plus-IO/Device/LPC17xx/SupportedBoards/LPCXpresso17xx-base-board.h" flags="7" id="org.eclipse.ltk.core.refactoring.delete.resources" resources="1" stamp="1358589299114"/>
+</session>
